@@ -28,9 +28,18 @@ DOWNLODAER_MIDDLEWARES = {
 }
 
 ITEM_PIPELINES = {
-	'baike.pipelines.JsonWithEncodingPipeline':300,
+	'baike.pipelines.MySQLStorePipeline',
+	#'baike.pipelines.JsonWithEncodingPipeline':300,
 }
 
 LOG_LEVEL = 'INFO'
 
 DOWNLOAD_DELAY = 1
+
+#SCHEDULER = "scrapy_redis."
+
+MYSQL_HOST = '10.16.10.215'
+MYSQL_DBNAME = 'cms'
+MYSQL_USER = 'cms'
+MYSQL_PASSWD = 'cms@dp99'
+

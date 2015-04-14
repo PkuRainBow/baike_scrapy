@@ -12,6 +12,7 @@ except:
 from scrapy.utils.response import get_base_url
 from scrapy.contrib.spiders import CrawlSpider,Rule
 from scrapy.contrib.linkextractors.sgml import SgmlLinkExtractor as sle
+from scrapy.http import Request
 
 from baike.items import *
 from misc.log import *
@@ -19,6 +20,7 @@ from misc.log import *
 class baikeSpider(CrawlSpider):
 	name = "baike"
 	allowed_domains = ["baike.baidu.com"]
+	domains = ["http://www.baike.baidu.com"]
 	start_urls = [
 		"http://www.baike.baidu.com/ziran",
 		"http://www.baike.baidu.com/wenhua",
@@ -53,7 +55,6 @@ class baikeSpider(CrawlSpider):
 
 		Rule(sle(allow=("/view/.*$")), callback='parse_word'),
 		Rule(sle(allow=("/subview/.*$")), callback='parse_word'),
-	#	Rule(sle(allow=("/view/.*$")), callback='parse', follow=True),
 	#	Rule(sle(allow=("/subview/[0-9]*/.*$")), callback='parse', follow=True),
 	]
  	
@@ -63,8 +64,11 @@ class baikeSpider(CrawlSpider):
 	#	text = BeautifulSoup(response)
 		sel = Selector(response)
 		site = sel.css('head title')
-		item['name'] = site.css('title::text').extract()
-   		item['url'] = response.url 
+		name = site.css('title::text').extract()
+		label = sel.css('sapn::text').extract()
+		item['name'] = name[0].split('_')[0]
+   		item['url'] = response.url
+		item['label'] = label[0]
 	#	item['name'] = "".join(text.head.title)
 	#	item['description'] = "".join(text.find_all("meta")[1])
    	#	item['url'] = response.url
@@ -80,14 +84,15 @@ class baikeSpider(CrawlSpider):
 		items = []
 		sel = Selector(response)
 		sites = sel.css('span a[href*=fenlei]')
-		for site in sites:	
-			item = baikeSiteItem()
-			item['url'] = site.css('::attr(href)')[0].extract()
-	#		item['name'] = site.css('::text')[0].extract()
-			items.append(item)
-	#		info('append url '+item['url'])		
-		return items
-
+#		for site in sites:	
+#			item = baikeSiteItem()
+#			item['url'] = site.css('::attr(href)')[0].extract()
+#			items.append(item)
+#		return items		
+		for site in sites:
+			url = self.domains[0]+site.css('::attr(href)')[0].extract()[0]
+			yield Request(url, callback=self.parse_view)
+				
 	def parse_view(self, response):
 		info('parsed_view ' + str(response))
 		items = []
@@ -97,21 +102,26 @@ class baikeSpider(CrawlSpider):
 		sites_view = sel_view.css('li div a[href*=view]')
 		sites_goto = sel_goto.css('a[href*=gotoList]')
 		sites_fenlei = sel_fenlei.css('span a[href*=fenlei]')
+		#for site in sites_view:	
+		#	item = baikeSiteItem()
+		#	item['url'] = site.css('::attr(href)')[0].extract()
+		#	items.append(item)	
+		#for site in sites_goto:	
+		#	item = baikeSiteItem()
+		#	item['url'] = site.css('::attr(href)')[0].extract()
+		#	items.append(item)	
+		#for site in sites_fenlei:
+		#	item = baikeSiteItem()
+		#	item['url'] = site.css('::attr(href)')[0].extract()
+		#	items.append(item)
 		for site in sites_view:	
-			item = baikeSiteItem()
-			item['url'] = site.css('::attr(href)')[0].extract()
-	#		item['name'] = site.css('::text')[0].extract()
-			items.append(item)	
-	#		info('append url '+item['url'])		
+			url = self.domains[0]+site.css('::attr(href)')[0].extract()[0]
+			yield Request(url, callback=self.parse_word)
+				
 		for site in sites_goto:	
-			item = baikeSiteItem()
-			item['url'] = site.css('::attr(href)')[0].extract()
-	#		item['name'] = site.css('::text')[0].extract()
-			items.append(item)	
-	#		info('append url '+item['url'])
+			url = self.domains[0]+site.css('::attr(href)')[0].extract()[0]
+			yield Request(url, callback=self.parse_word)
+
 		for site in sites_fenlei:
-			item = baikeSiteItem()
-			item['url'] = site.css('::attr(href)')[0].extract()
-	#		item['name'] = site.css('::text')[0].extract()
-			items.append(item)
-		return items
+			url = self.domains[0]+site.css('::attr(href)')[0].extract()[0]
+			yield Request(url, callback=self.parse_word)

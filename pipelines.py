@@ -4,13 +4,16 @@
 # See: http://doc.scrapy.org/en/latest/topics/item-pipeline.html
 
 #import redis
-
-
-from scrapy import signals
+from datetime import datetime
+from scrapy.exceptions import DropItem
+from twisted.enterprise import adbapi
+from hashlib import md5
+from scrapy import log
 
 
 import json
 import codecs
+#import MySQLdb
 from collections import OrderedDict
 
 
@@ -28,23 +31,54 @@ class JsonWithEncodingPipeline(object):
         self.file.close()
 
 
-#class RedisPipeline(object):
-#
-#    def __init__(self):
-#        self.r = redis.StrictRedis(host='localhost', port=6379)
-#
-#    def process_item(self, item, spider):
-#        if not item['id']:
-#            print 'no id item!!'
-#
-#        str_recorded_item = self.r.get(item['id'])
-#        final_item = None
-#        if str_recorded_item is None:
-#            final_item = item
-#        else:
-#            ritem = eval(self.r.get(item['id']))
-#            final_item = dict(item.items() + ritem.items())
-#        self.r.set(item['id'], final_item)
-#
-#    def spider_closed(self, spider):
-#        return
+class MySQLStorePipeline(object):
+	def __init__(self, dbpool):
+		self.dbpool = dbpool
+
+	@classmethod
+	def from_settings(cls, settings):
+		dbargs = dict(
+			host=settings['MYSQL_HOST'],
+			db=settings['MYSQL_DBNAME'],
+			user=settings['MYSQL_USER'],
+			passwd=settings['MYSQL_PASSWD'],
+			charset='utf8',
+			use_unicode=True,
+		)
+		dbpool = adbapi.ConnectionPool('MySQLdb', **dbargs)
+		return cls(dbpool)
+
+	def process_item(self, item, spider):
+		d = self.dbpool.runInteraction(self._do_upsert, item, spider);
+		d.addErrback(self._handle_error, item, spider);
+		d.addBoth(lambda _: item)
+		return d
+
+	def _do_upsert(self, conn, item, spider):
+		guid = self._get_guid(item)
+		now = datetime.utcnow().replace(microsecond=0).isoformat(' ')
+		conn.execute("""SELECT EXISTS(
+			SELECT 1 FROM scrapy_baike WHERE guid = %s
+		)""", (guid, ))
+		ret = conn.fetchone()[0]
+
+		if ret:
+			conn.execute("""
+				UPDATE scrapy_baike 
+				SET name=%s, label=%s, url=%s, updated=%s
+				WHERE guid=%s
+			""", (item['name'], item['label'], item['url'], now, guid))
+			spider.log("Item updated in db: %s %r" % (guid, item))
+		else:
+			conn.execute("""
+				INSERT INTO scrapy_baike (guid, name, label, url, updated)
+				VALUES (%s, %s, %s, %s, %s)
+			""", (guid, item['name'], item['label'], item['url'], now))
+			spider.log("Item stored in db: %s %r" % (guid, item))
+
+	def	_handle_error(self, failure, item, spider):
+		log.err(failure)
+
+	def _get_guid(self, item):
+		return md5(item['url']).hexdigest()
+
